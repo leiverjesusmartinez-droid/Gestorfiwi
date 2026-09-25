@@ -101,7 +101,6 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     List<DispositivoReal> listaTemporal = [];
     List<Future<void>> tareasEscaneo = [];
 
-    // Escaneo rápido de IPs activas en la red local
     for (int i = 1; i <= 40; i++) {
       String ipActual = '$subredBase.$i';
       
@@ -113,7 +112,6 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
           String tipoNombre = 'Equipo Desconocido';
           String macSimulada = 'A1:B2:C3:D4:E5:F$i';
 
-          // Identificación inteligente basada en la IP y comportamiento real en red doméstica
           if (ipActual == wifiIP) {
             marcaModelo = 'Samsung Galaxy A13 5G';
             tipoNombre = 'Teléfono Principal (Este equipo)';
@@ -152,7 +150,6 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
 
     await Future.wait(tareasEscaneo);
 
-    // Asegurarnos de que el teléfono principal y el Xiaomi Redmi 9C aparezcan siempre si están activos en la red
     if (!listaTemporal.any((d) => d.ip == wifiIP) && wifiIP != null) {
       listaTemporal.add(DispositivoReal(
         ip: wifiIP,
