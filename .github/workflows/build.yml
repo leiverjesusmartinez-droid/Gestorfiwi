@@ -26,6 +26,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Crear estructura de Android limpia
+        run: flutter create . --platforms=android --project-name=gestor_fiwi
+
       - name: Instalar dependencias
         run: flutter pub get
 
