@@ -26,9 +26,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Crear soporte de Android
-        run: flutter create . --platforms=android --org com.example
-
       - name: Instalar dependencias
         run: flutter pub get
 
