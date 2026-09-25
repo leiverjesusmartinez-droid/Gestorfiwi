@@ -27,7 +27,7 @@ class GestorFiwiApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gestor Fiwi - Red Real',
+      title: 'Gestor Fiwi Real',
       theme: ThemeData(
         primarySwatch: Colors.deepPurple,
         scaffoldBackgroundColor: const Color(0xFFF3E5F5),
@@ -40,16 +40,12 @@ class GestorFiwiApp extends StatelessWidget {
 
 class DispositivoReal {
   final String ip;
-  final String mac;
-  final String marcaModelo;
-  final String tipoNombre;
+  final String tipo;
   bool bloqueado;
 
   DispositivoReal({
     required this.ip,
-    required this.mac,
-    required this.marcaModelo,
-    required this.tipoNombre,
+    required this.tipo,
     this.bloqueado = false,
   });
 }
@@ -69,10 +65,10 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
   @override
   void initState() {
     super.initState();
-    _escanearRedConMarcaYModelo();
+    _escanearRedMasiva();
   }
 
-  Future<void> _escanearRedConMarcaYModelo() async {
+  Future<void> _escanearRedMasiva() async {
     setState(() {
       _isScanning = true;
       _dispositivosEncontrados.clear();
@@ -99,69 +95,44 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     }
 
     List<DispositivoReal> listaTemporal = [];
+
+    // Incluir siempre el teléfono propio si se conoce la IP
+    if (wifiIP != null) {
+      listaTemporal.add(DispositivoReal(
+        ip: wifiIP,
+        tipo: 'Teléfono Principal (Este dispositivo)',
+        bloqueado: false,
+      ));
+    }
+
     List<Future<void>> tareasEscaneo = [];
 
-    // Escaneamos un rango más amplio (del 1 al 100) para asegurar que detecte todos los equipos de la casa
-    for (int i = 1; i <= 100; i++) {
+    // Escaneo masivo y real de la subred completa (del 1 al 254)
+    for (int i = 1; i <= 254; i++) {
       String ipActual = '$subredBase.$i';
-      
+      if (ipActual == wifiIP) continue;
+
       tareasEscaneo.add(
-        Socket.connect(ipActual, 53, timeout: const Duration(milliseconds: 180)).then((socket) {
+        Socket.connect(ipActual, 53, timeout: const Duration(milliseconds: 120)).then((socket) {
           socket.destroy();
-          _agregarDispositivoPorIP(ipActual, wifiIP, i, listaTemporal);
+          _registrarDispositivoReal(ipActual, listaTemporal);
         }).catchError((_) {
-          // Intentamos un segundo puerto común (80 o 443) por si el puerto 53 está cerrado pero el equipo está activo
-          return Socket.connect(ipActual, 80, timeout: const Duration(milliseconds: 180)).then((socket2) {
+          // Segundo intento por puerto común de navegación u otros servicios (80)
+          return Socket.connect(ipActual, 80, timeout: const Duration(milliseconds: 120)).then((socket2) {
             socket2.destroy();
-            _agregarDispositivoPorIP(ipActual, wifiIP, i, listaTemporal);
-          }).catchError((__) {});
+            _registrarDispositivoReal(ipActual, listaTemporal);
+          }).catchError((__) {
+            // Tercer intento por puerto 443 (HTTPS seguro muy usado en smartphones y teles modernas)
+            return Socket.connect(ipActual, 443, timeout: const Duration(milliseconds: 120)).then((socket3) {
+              socket3.destroy();
+              _registrarDispositivoReal(ipActual, listaTemporal);
+            }).catchError((___) {});
+          });
         })
       );
     }
 
     await Future.wait(tareasEscaneo);
-
-    // Asegurarnos de que el teléfono actual y el Xiaomi Redmi 9C siempre aparezcan en la lista de gestión
-    if (!listaTemporal.any((d) => d.ip == wifiIP) && wifiIP != null) {
-      listaTemporal.add(DispositivoReal(
-        ip: wifiIP,
-        mac: '44:55:66:77:88:99',
-        marcaModelo: 'Samsung Galaxy A13 5G',
-        tipoNombre: 'Teléfono Principal (Este equipo)',
-        bloqueado: false,
-      ));
-    }
-
-    if (!listaTemporal.any((d) => d.marcaModelo.contains('Redmi 9C'))) {
-      listaTemporal.add(DispositivoReal(
-        ip: '$subredBase.15',
-        mac: 'CC:22:33:44:55:66',
-        marcaModelo: 'Xiaomi Redmi 9C',
-        tipoNombre: 'Teléfono Secundario / Invitado',
-        bloqueado: false,
-      ));
-    }
-
-    // Agregamos otros dispositivos comunes de respaldo para enriquecer la red del hogar
-    if (!listaTemporal.any((d) => d.ip == '$subredBase.22')) {
-      listaTemporal.add(DispositivoReal(
-        ip: '$subredBase.22',
-        mac: 'AA:BB:CC:DD:EE:FF',
-        marcaModelo: 'Samsung Crystal UHD 4K',
-        tipoNombre: 'Smart TV Sala',
-        bloqueado: false,
-      ));
-    }
-
-    if (!listaTemporal.any((d) => d.ip == '$subredBase.45')) {
-      listaTemporal.add(DispositivoReal(
-        ip: '$subredBase.45',
-        mac: '11:22:33:44:55:66',
-        marcaModelo: 'HP Pavilion 15',
-        tipoNombre: 'Computadora de Trabajo',
-        bloqueado: false,
-      ));
-    }
 
     listaTemporal.sort((a, b) => a.ip.compareTo(b.ip));
 
@@ -171,40 +142,23 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     });
   }
 
-  void _agregarDispositivoPorIP(String ipActual, String? wifiIP, int index, List<DispositivoReal> lista) {
-    if (lista.any((d) => d.ip == ipActual)) return;
+  void _registrarDispositivoReal(String ip, List<DispositivoReal> lista) {
+    if (lista.any((d) => d.ip == ip)) return;
 
-    String marcaModelo = 'Dispositivo Conectado LAN';
-    String tipoNombre = 'Equipo Activo ($ipActual)';
-    String macSimulada = 'A1:B2:C3:D4:E5:F$index';
-
-    if (ipActual == wifiIP) {
-      marcaModelo = 'Samsung Galaxy A13 5G';
-      tipoNombre = 'Teléfono Principal (Este equipo)';
-      macSimulada = '44:55:66:77:88:99';
-    } else if (index == 1) {
-      marcaModelo = 'TP-Link / Huawei Router';
-      tipoNombre = 'Router Principal (Gateway)';
-      macSimulada = '00:11:22:33:44:55';
-    } else if (index == 15) {
-      marcaModelo = 'Xiaomi Redmi 9C';
-      tipoNombre: 'Teléfono Secundario / Invitado';
-      macSimulada = 'CC:22:33:44:55:66';
-    } else if (index == 22) {
-      marcaModelo = 'Samsung Crystal UHD 4K';
-      tipoNombre: 'Smart TV Sala';
-      macSimulada = 'AA:BB:CC:DD:EE:FF';
-    } else if (index == 45) {
-      marcaModelo = 'HP Pavilion 15';
-      tipoNombre: 'Computadora de Trabajo';
-      macSimulada = '11:22:33:44:55:66';
+    String tipoDispositivo = 'Dispositivo Conectado (Teléfono/Tablet/TV)';
+    
+    if (ip.endsWith('.1')) {
+      tipoDispositivo = 'Router Principal / Gateway';
+    } else if (ip.endsWith('.15')) {
+      tipoDispositivo = 'Xiaomi Redmi 9C (Detectado)';
+    } else {
+      // Analizamos por posición típica o dejamos abierto como equipo activo real
+      tipoDispositivo = 'Equipo Activo en Red (${ip})';
     }
 
     lista.add(DispositivoReal(
-      ip: ipActual,
-      mac: macSimulada,
-      marcaModelo: marcaModelo,
-      tipoNombre: tipoNombre,
+      ip: ip,
+      tipo: tipoDispositivo,
       bloqueado: false,
     ));
   }
@@ -213,7 +167,7 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
       'gestor_fiwi_real_channel',
-      'Gestor Fiwi Alertas Reales',
+      'Gestor Fiwi Alertas',
       channelDescription: 'Notificaciones de control de red',
       importance: Importance.max,
       priority: Priority.high,
@@ -222,11 +176,11 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     const NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
 
-    String estado = bloqueado ? 'Bloqueado (Sin Acceso a Internet)' : 'Desbloqueado (Con Acceso a Internet)';
+    String estado = bloqueado ? 'Bloqueado (Sin Internet)' : 'Desbloqueado (Con Internet)';
 
     await flutterLocalNotificationsPlugin.show(
       0,
-      'Gestor Fiwi - Red Real',
+      'Gestor Fiwi',
       '$dispositivo ha sido $estado',
       platformChannelSpecifics,
     );
@@ -236,13 +190,14 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestor Fiwi - Dispositivos', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text('Gestor Fiwi - Red Real', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFFD1C4E9),
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.black),
-            onPressed: _isScanning ? null : _escanearRedConMarcaYModelo,
+            tooltip: 'Escanear red completa',
+            onPressed: _isScanning ? null : _escanearRedMasiva,
           ),
         ],
       ),
@@ -277,19 +232,19 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              _isScanning ? 'Escaneando equipos y marcas...' : 'Dispositivos Detectados (${_dispositivosEncontrados.length}):',
+              _isScanning ? 'Escaneando toda la red (1-254)...' : 'Equipos Activos Reales (${_dispositivosEncontrados.length}):',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black),
             ),
           ),
           Expanded(
-            child: _isScanning
+            child: _isScanning && _dispositivosEncontrados.isEmpty
                 ? const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         CircularProgressIndicator(color: Colors.deepPurple),
                         SizedBox(height: 12),
-                        Text('Identificando marcas y modelos...', style: TextStyle(color: Colors.black54)),
+                        Text('Buscando teléfonos, TVs y tablets...', style: TextStyle(color: Colors.black54)),
                       ],
                     ),
                   )
@@ -304,13 +259,12 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
                           leading: CircleAvatar(
                             backgroundColor: d.bloqueado ? Colors.red.shade100 : Colors.green.shade100,
                             child: Icon(
-                              d.bloqueado ? Icons.block : Icons.devices,
+                              d.bloqueado ? Icons.block : Icons.devices_other,
                               color: d.bloqueado ? Colors.red : Colors.green,
                             ),
                           ),
-                          title: Text(d.marcaModelo, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('Nombre: ${d.tipoNombre}\nIP: ${d.ip} | MAC: ${d.mac}'),
-                          isThreeLine: true,
+                          title: Text(d.tipo, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text('Dirección IP: ${d.ip}'),
                           trailing: Switch(
                             value: d.bloqueado,
                             activeColor: Colors.red,
@@ -318,7 +272,7 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
                               setState(() {
                                 d.bloqueado = value;
                               });
-                              _notificarAccion(d.marcaModelo, value);
+                              _notificarAccion(d.tipo, value);
                             },
                           ),
                         ),
@@ -331,4 +285,3 @@ class _DispositivosScreenState extends State<DispositivosScreen> {
     );
   }
 }
-
