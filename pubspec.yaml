@@ -1,4 +1,4 @@
-name: gestor_fiwi
+name: gesto_fiwi
 description: "Gestor de dispositivos Wi-Fi"
 publish_to: 'none'
 version: 1.0.0+1
